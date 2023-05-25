@@ -1,0 +1,232 @@
+---
+title: "MNIST"
+author: "Pedro Teles"
+toc: true
+format: 
+    html:
+        code-tools: true
+        self-contained: true
+---
+
+Reference Material:
+
+* [Daniel Moser, Introduction to Deep Learning with Keras and TensorFlow](https://colab.research.google.com/github/AviatorMoser/keras-mnist-tutorial/blob/master/MNIST%20in%20Keras.ipynb#scrollTo=JXmhX-06HvOq)
+
+# Libraries
+
+```{python}
+import pandas as pd
+import matplotlib.pyplot as plt
+import itertools
+
+from sklearn.model_selection import train_test_split
+
+from keras.utils import np_utils
+from keras.models import Sequential  # Model type to be used
+from keras.layers.core import Dense, Activation
+from keras.optimizers import gradient_descent_v2
+
+# Set random seed for keras
+from numpy.random import seed
+seed(42)
+```
+
+# Data
+
+```{python}
+data = pd.read_csv('mnist_data', sep = ',', header=None)\
+    .rename({0: 'label'}, axis=1)
+```
+
+
+```{python}
+#| code-fold: true
+
+def digit_as_matrix(data, digit):
+    digit_data = data[data['label'] == digit]\
+        .drop('label', axis=1)
+    return digit_data.values[0].reshape(28,28)
+
+# Source: https://colab.research.google.com/github/AviatorMoser/keras-mnist-tutorial/blob/master/MNIST%20in%20Keras.ipynb
+def pretty_print_matrix(mat, fmt="g"):
+    col_maxes = [max([len(("{:"+fmt+"}").format(x)) for x in col]) for col in mat.T]
+    for x in mat:
+        for i, y in enumerate(x):
+            print(("{:"+str(col_maxes[i])+fmt+"}").format(y), end="  ")
+        print("")
+```
+
+## As Figures
+
+```{python}
+#| code-fold: true
+
+plt.rcParams['figure.figsize'] = (5,10) # Make the figures a bit bigger
+
+for i in range(10):
+    plt.subplot(5,2,i+1)
+    plt.imshow(digit_as_matrix(data, i), cmap='gray', interpolation='none')
+    plt.title(f'Digit {i}')
+
+plt.tight_layout()
+#'C:\Users\Pedro\AppData\Local\Programs\Quarto\'
+```
+
+## As a Matrix
+
+```{python}
+#| code-fold: true
+
+pretty_print_matrix(digit_as_matrix(data, 7))
+```
+
+# Preprocessing
+
+First, we separate the data into predictor variables (independent variables) and response variable (dependent variable). The predictor variables (pixels) are the features or attributes that are used to make predictions, while the response variabl (digit label) is the variable we want to predict or explain based on the predictor variables.
+
+```{python}
+X, y = data.drop('label', axis=1), data[['label']]
+```
+
+Next, we proceed with data preparation for the model. In this step, we focus on scaling the pixels of our data to fall within the range of 0 to 1. While not mandatory, this practice is highly recommended as it tends to make computations faster.
+
+```{python}
+X = X.to_numpy().astype('float32') / 255
+```
+
+To enhance compatibility with the anticipated loss function, we employ one-hot encoding for our labels.
+
+```{python}
+Y = np_utils.to_categorical(y, 10)
+```
+
+# Model
+
+After preprocessing the data, it is essential to choose the model architecture. As per the exercise requirements, we need to consider the following variations:
+
+- Units in the hidden layer: 25, 50, 100.
+
+- Batch Size for Gradient Calculation:
+
+    - Stochastic Gradient Descent: Batch Size = 1.
+
+    - Mini-Batch: Batch Size = 10, 50.
+
+    - Gradient Descent: Batch Size = 5000.
+
+- Learning Rate: 0.5, 1, 10.
+
+In order to facilitate the exploration of multiple variations, we will create flexible functions that enable effortless parameter customization.
+
+Before we proceed with the actual model, it is important to note that the chosen values for the learning rate are unconventional. Typically, the learning rate is set to a small number, such as 0.001, 0.01, or 0.1, in practical scenarios. However, we will use these values to illustrate the impact of the learning rate on the model's performance.
+
+## Build
+
+We start our model architecture by creating a function that builds the model. The model is a sequential model, which means that it is a linear stack of layers. In this case, we have two layers: a hidden layer and an output layer. The hidden layer has a sigmoid activation function, while the output layer has a softmax activation function.
+
+```{python}
+def _build_model(n_units):
+    model = Sequential()
+    model.add(Dense(n_units, input_shape=(784,)))
+    model.add(Activation('sigmoid'))
+    model.add(Dense(10))
+    model.add(Activation('softmax'))
+
+    return model
+```
+
+## Compile
+
+We employ gradient descent as our optimizer and utilize categorical cross-entropy as the loss function. The choice of optimization technique — stochastic gradient descent, mini-batch gradient descent, or gradient descent — depends on the batch size being considered.
+
+```{python}
+def _compile_model(model, learning_rate):
+
+    opt = gradient_descent_v2.SGD(learning_rate=learning_rate)
+
+    model.compile(
+        loss='categorical_crossentropy', 
+        optimizer=opt, 
+        metrics=['accuracy']
+    )
+
+    return model
+```
+
+## Train
+
+As observed, we are training the model using the entire dataset, without utilizing separate validation and test sets. While this approach is not ideal, it is adopted to simplify the exploration of various iterations and variations.
+
+```{python}
+def _train_model(model, X, Y, batch_size):
+
+    model.fit(
+        X, Y, verbose=0,
+        batch_size=batch_size,
+        epochs=100
+    )
+
+    return model
+```
+
+## Wrapper Function
+
+```{python}
+def build_train_wrapper(X, Y, n_units, batch_size, learning_rate):
+    model = _build_model(n_units)
+
+    model = _compile_model(model, learning_rate)
+
+    model = _train_model(model, X, Y, batch_size)
+
+    return model
+```
+
+# Empirical Errors
+
+Based on the provided graphs, we can begin analyzing the impact of the batch size on the model's performance. As anticipated, the stochastic gradient descent (batch size = 1) demonstrates the overall highest loss and lowest accuracy, aligning with expectations. Additionally, it is evident that SGD exhibits a significant variance in the error term.
+
+Conversely, we expected the gradient descent (batch size = 5000) to yield the lowest loss and highest accuracy. However, contrary to our expectations, GD underperformed when compared to the mini-batch approach. Surprisingly, the mini-batch gradient descent (batch size = 10, 50) displayed remarkable results, consistently outperforming the other approaches by a substantial margin.
+
+Shifting our focus to the learning rate, while keeping in mind the concerns mentioned earlier, it is clear that both GD and SGD struggled to converge to 0 in the majority of cases. However, just by the scale of the graph we can se that bigger learning rates were tightly associated with higher error rates. On the other hand, the mini-batch approach exhibited a more consistent behavior.
+
+Regarding the variation in the number of hidden layer units, the results were somewhat mixed. It appears that the errors were more influenced by the learning rate and batch size rather than the number of hidden layer units. However, upon closer examination of the lines with less variability, it is evident that increasing the number of hidden layer units led to a reduction in error. This relationship aligns with our expectations, as a higher number of units in the hidden layer enables the model to learn more intricate patterns.
+
+```{python}
+#| code-fold: true
+
+# Line colors
+colors = {
+    1: 'red',
+    10: 'blue',
+    50: 'green',
+    5000: 'orange'
+}
+
+plt.rcParams['figure.figsize'] = (12,12)
+
+for batch_size in [1, 10, 50, 5000]: # For each batch size
+    cont = 0
+    for unit in [25, 50, 100]: # For each hidden layer unit
+        for learning_rate in [0.5, 1, 10]: # For each learning rate
+            # Build, train and evaluate model
+            fitted_model = build_train_wrapper(
+                X, Y, unit, 
+                batch_size, 
+                learning_rate
+            )
+
+            train_loss = fitted_model.history.history['loss']
+            epochs = range(1, len(train_loss) + 1)
+
+            # Draw plot
+            plt.subplot(3,3,cont+1)
+            plt.plot(epochs, train_loss, colors[batch_size], label=batch_size)
+            plt.title(f'Hidden Layers Units: {unit} | Learning Rate: {learning_rate}')
+            plt.xlabel('Epochs')
+            plt.ylabel('Error')
+            plt.legend(title='Batch Size', loc='upper right')
+
+            cont += 1
+    plt.tight_layout()
+```
